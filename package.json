@@ -1,0 +1,32 @@
+{
+  "name": "riseup-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Use your own RiseUp (רייזאפ) cashflow from an AI assistant over MCP: read budgets and transactions, and move transactions between categories.",
+  "keywords": ["riseup", "cashflow", "budget", "mcp", "mcp-server", "model-context-protocol"],
+  "license": "MIT",
+  "author": "Michael Tadnir (https://github.com/tadnir)",
+  "homepage": "https://github.com/tadnir/riseup-mcp#readme",
+  "bugs": { "url": "https://github.com/tadnir/riseup-mcp/issues" },
+  "repository": { "type": "git", "url": "git+https://github.com/tadnir/riseup-mcp.git" },
+  "engines": { "node": ">=20.0.0" },
+  "type": "module",
+  "bin": { "riseup-mcp": "src/main.ts" },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "playwright": "^1.55.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
