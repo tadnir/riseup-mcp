@@ -13,7 +13,8 @@
  * anything typed for the second factor are only ever sent to RiseUp and its
  * provider.
  */
-import { rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { access, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { SITE_ORIGIN } from "./api.js";
 import type { Cookie } from "./cookies.js";
@@ -111,12 +112,41 @@ const REQUEST_SCRIPT = `function (method, path, body) {
  * Chromium on RiseUp's sign-in page. Headless unless RISEUP_HEADLESS=false;
  * RISEUP_CHROMIUM_PATH picks another Chromium than Playwright's own.
  *
- * It runs full Chromium in its new headless mode, without the automation flag
- * or "HeadlessChrome" in its user agent, with a phone-sized screen so the
+ * It runs full Chromium without the automation flag or "HeadlessChrome" in
+ * its user agent; Google's sign-in still refuses headless Chromium, so the
+ * image runs it with a window (RISEUP_HEADLESS=false), on an Xvfb screen it
+ * starts itself where there is none, with a phone-sized screen so the
  * provider's pages read well on the sign-in page, and keeps one profile in
  * RISEUP_CONFIG_DIR/browser, so a provider that remembers the device asks
  * less next time.
  */
+let virtualScreen: Promise<string> | undefined;
+
+/**
+ * A windowed browser on a Linux machine without a screen gets an Xvfb one,
+ * started once and kept for the process's life.
+ */
+function display(): Promise<string | undefined> {
+  if (process.platform !== "linux" || process.env.DISPLAY) return Promise.resolve(process.env.DISPLAY);
+  virtualScreen ??= (async () => {
+    const n = 90 + Math.floor(Math.random() * 400);
+    const xvfb = spawn("Xvfb", [`:${n}`, "-screen", "0", "1280x1024x24", "-nolisten", "tcp"], { stdio: "ignore", detached: false });
+    xvfb.unref();
+    const failed = new Promise<never>((_, reject) => xvfb.once("error", (err) => reject(new RiseupLoginError(`Could not start Xvfb for the sign-in browser (${err.message}). Install xvfb, or set RISEUP_HEADLESS=true.`))));
+    for (let i = 0; i < 50; i++) {
+      const up = await Promise.race([access(`/tmp/.X11-unix/X${n}`).then(() => true, () => false), failed]);
+      if (up) return `:${n}`;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    xvfb.kill();
+    throw new RiseupLoginError("Xvfb did not start for the sign-in browser.");
+  })().catch((err: unknown) => {
+    virtualScreen = undefined;
+    throw err;
+  });
+  return virtualScreen;
+}
+
 export async function openChromium(): Promise<LoginBrowser> {
   let chromium: typeof import("playwright").chromium;
   try {
@@ -129,11 +159,15 @@ export async function openChromium(): Promise<LoginBrowser> {
   const profile = join(configDir(), "browser");
   // One sign-in runs at a time, so a lock left in the profile is from a browser that died with its container.
   for (const lock of ["SingletonLock", "SingletonSocket", "SingletonCookie"]) await rm(join(profile, lock), { force: true });
+  const screen = headless ? undefined : await display();
   const context = await chromium
     .launchPersistentContext(profile, {
       headless,
+      ...(screen ? { env: { ...process.env, DISPLAY: screen } } : {}),
       ...(executablePath ? { executablePath } : { channel: "chromium" }),
+      // Google refuses to sign in in a browser that says it is automated.
       args: ["--disable-blink-features=AutomationControlled"],
+      ignoreDefaultArgs: ["--enable-automation"],
       locale: "he-IL",
       timezoneId: "Asia/Jerusalem",
       viewport: { width: 430, height: 860 },

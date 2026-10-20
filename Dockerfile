@@ -5,14 +5,17 @@ FROM docker.io/library/node:22.22.0-bookworm-slim
 ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     RISEUP_CONFIG_DIR=/data \
-    RISEUP_LOGIN_HOST=0.0.0.0
+    RISEUP_LOGIN_HOST=0.0.0.0 \
+    RISEUP_HEADLESS=false
 
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Dev dependencies too: the server runs its TypeScript through tsx. The
-# sign-in runs in Playwright's Chromium, on RiseUp's own site.
+# sign-in runs in Playwright's Chromium, on RiseUp's own site, with a window on
+# an Xvfb screen: Google's sign-in refuses headless Chromium.
 RUN npm ci --include=dev \
  && npx playwright install --with-deps chromium \
+ && apt-get update && apt-get install -y --no-install-recommends xvfb \
  && npm cache clean --force \
  && rm -rf /var/lib/apt/lists/*
 
