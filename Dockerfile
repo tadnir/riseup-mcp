@@ -11,10 +11,11 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Dev dependencies too: the server runs its TypeScript through tsx. The
-# sign-in runs in Playwright's Chromium, on RiseUp's own site.
+# sign-in runs in Playwright's Chromium, on RiseUp's own site, with a window on
+# an Xvfb screen: Google's sign-in refuses headless Chromium.
 RUN npm ci --include=dev \
  && npx playwright install --with-deps chromium \
- && apt-get update && apt-get install -y --no-install-recommends xvfb xauth \
+ && apt-get update && apt-get install -y --no-install-recommends xvfb \
  && npm cache clean --force \
  && rm -rf /var/lib/apt/lists/*
 
@@ -24,6 +25,4 @@ COPY tsconfig.json ./
 # Any user works; give it a writable /data.
 USER 1000:1000
 EXPOSE 8768
-# The sign-in browser runs with a window, on a virtual screen: Google's
-# sign-in refuses headless Chromium.
-ENTRYPOINT ["xvfb-run", "-a", "-s", "-screen 0 1280x1024x24", "node", "--import", "tsx", "src/main.ts"]
+ENTRYPOINT ["node", "--import", "tsx", "src/main.ts"]
