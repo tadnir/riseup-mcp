@@ -111,8 +111,10 @@ const REQUEST_SCRIPT = `function (method, path, body) {
  * Chromium on RiseUp's sign-in page. Headless unless RISEUP_HEADLESS=false;
  * RISEUP_CHROMIUM_PATH picks another Chromium than Playwright's own.
  *
- * It runs full Chromium in its new headless mode, without the automation flag
- * or "HeadlessChrome" in its user agent, with a phone-sized screen so the
+ * It runs full Chromium without the automation flag or "HeadlessChrome" in
+ * its user agent; Google's sign-in still refuses headless Chromium, so the
+ * image runs it with a window on a virtual screen (RISEUP_HEADLESS=false
+ * under xvfb-run), with a phone-sized screen so the
  * provider's pages read well on the sign-in page, and keeps one profile in
  * RISEUP_CONFIG_DIR/browser, so a provider that remembers the device asks
  * less next time.
@@ -133,7 +135,9 @@ export async function openChromium(): Promise<LoginBrowser> {
     .launchPersistentContext(profile, {
       headless,
       ...(executablePath ? { executablePath } : { channel: "chromium" }),
+      // Google refuses to sign in in a browser that says it is automated.
       args: ["--disable-blink-features=AutomationControlled"],
+      ignoreDefaultArgs: ["--enable-automation"],
       locale: "he-IL",
       timezoneId: "Asia/Jerusalem",
       viewport: { width: 430, height: 860 },

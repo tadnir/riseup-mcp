@@ -86,7 +86,7 @@ Moving into fixed expenses is not supported: the app asks follow-up questions fo
 | `RISEUP_LOGIN_HOST` | `127.0.0.1` | Address the sign-in page listens on |
 | `RISEUP_LOGIN_PORT` | `8768` | Its port; a free one is used if another copy holds it |
 | `RISEUP_LOGIN_URL` | `http://localhost:<port>/` | The link handed out, when the page sits behind a reverse proxy. When set, the page starts with the server. |
-| `RISEUP_HEADLESS` | `true` | `false` also shows the sign-in browser's window |
+| `RISEUP_HEADLESS` | `true` | `false` runs the sign-in browser with a window. Google's sign-in refuses headless Chromium, so a two-step sign-in through Google needs `false` (on a server, under `xvfb-run`, as the image does) |
 | `RISEUP_CHROMIUM_PATH` | Playwright's Chromium | Another Chromium to sign in with |
 
 ## Hosting one long-lived copy
