@@ -48,6 +48,8 @@ export interface LoginBrowser {
   location(): string;
   /** RiseUp's cookies, HttpOnly ones included. */
   cookies(): Promise<Cookie[]>;
+  /** The browser's user agent, which RiseUp may tie the session to. */
+  userAgent(): string;
   close(): Promise<void>;
 }
 
@@ -178,9 +180,10 @@ export async function openChromium(): Promise<LoginBrowser> {
     });
   try {
     const page = context.pages()[0] ?? (await context.newPage());
-    const userAgent = String(await page.evaluate("navigator.userAgent"));
+    let userAgent = String(await page.evaluate("navigator.userAgent"));
     if (userAgent.includes("HeadlessChrome")) {
       const plain = userAgent.replace("HeadlessChrome", "Chrome");
+      userAgent = plain;
       await context.setExtraHTTPHeaders({ "user-agent": plain });
       await context.addInitScript(`Object.defineProperty(Navigator.prototype, "userAgent", { get: () => ${JSON.stringify(plain)} });`);
     }
@@ -220,8 +223,19 @@ export async function openChromium(): Promise<LoginBrowser> {
         }
       },
       async cookies() {
-        const all = await context.cookies(SITE_ORIGIN);
-        return all.map((c) => ({ name: c.name, value: c.value, ...(c.expires > 0 ? { expires: Math.floor(c.expires) } : {}) }));
+        // Every cookie RiseUp's site gets, whatever its path (some may be set for /api only).
+        const host = new URL(SITE_ORIGIN).hostname;
+        const forSite = (await context.cookies()).filter((c) => {
+          const domain = c.domain.replace(/^\./, "");
+          return host === domain || host.endsWith(`.${domain}`);
+        });
+        // Where two share a name, the one sent to the site's root wins.
+        forSite.sort((a, b) => (a.path === "/" ? 1 : 0) - (b.path === "/" ? 1 : 0));
+        const byName = new Map(forSite.map((c) => [c.name, c]));
+        return [...byName.values()].map((c) => ({ name: c.name, value: c.value, ...(c.expires > 0 ? { expires: Math.floor(c.expires) } : {}) }));
+      },
+      userAgent() {
+        return userAgent;
       },
       async close() {
         await context.close();

@@ -87,14 +87,14 @@ export class SessionKeeper {
   }
 
   /** Takes a fresh sign-in: saves it and starts keeping it. */
-  async signedIn(cookies: Cookie[], lengthMs: number): Promise<void> {
+  async signedIn(cookies: Cookie[], lengthMs: number, userAgent?: string): Promise<void> {
     await this.#serial(async () => {
       const now = this.#now();
-      this.#session = { version: 1, cookies, signedInAt: new Date(now).toISOString(), endsAt: now + lengthMs };
+      this.#session = { version: 1, cookies, signedInAt: new Date(now).toISOString(), endsAt: now + lengthMs, ...(userAgent ? { userAgent } : {}) };
       this.#jar = new CookieJar(cookies);
       await this.#store.save(this.#session);
       this.#status = { ...this.#fromSession(this.#session), state: "signed_in", lastCheckedAt: new Date(now).toISOString() };
-      this.#log("signed in");
+      this.#log(`signed in (cookies: ${cookies.map((c) => c.name).join(", ")})`);
     });
   }
 
@@ -141,6 +141,11 @@ export class SessionKeeper {
     await this.#serial(() => this.#endIfOver());
     if (!this.#session || !this.#jar) throw new SignInRequired(this.signInHint);
     return this.#jar;
+  }
+
+  /** The user agent of the browser that signed in, if one did. */
+  userAgent(): string | undefined {
+    return this.#session?.userAgent;
   }
 
   /** RiseUp set new cookies: save them so a restart has them. */
