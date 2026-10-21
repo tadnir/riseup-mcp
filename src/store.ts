@@ -10,6 +10,8 @@ export interface SavedSession {
   signedInAt: string;
   /** Epoch ms; the session is dropped here regardless of RiseUp. */
   endsAt?: number;
+  /** The signing-in browser's user agent, sent with every call. */
+  userAgent?: string;
 }
 
 export interface SessionStore {

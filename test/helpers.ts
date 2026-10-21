@@ -106,6 +106,9 @@ export function fakeBrowser(options: { secondFactor?: boolean; cookies?: Cookie[
     location() {
       return "login.example";
     },
+    userAgent() {
+      return "ExampleBrowser/1.0";
+    },
     async cookies() {
       return options.cookies ?? [{ name: "session", value: "s1" }];
     },

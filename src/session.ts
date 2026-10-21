@@ -146,8 +146,11 @@ export class SessionManager {
 
   /** A refused session is forgotten, and the caller is told to sign in. */
   async #apiFetch(input: URL | RequestInfo, init: RequestInit | undefined, f: Fetch): Promise<Response> {
-    const res = await f(input, init);
+    // As the browser that signed in: RiseUp may tie the session to it.
+    const userAgent = this.keeper.userAgent();
+    const res = await f(input, userAgent ? { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), "user-agent": userAgent } } : init);
     if (res.status === 401 || res.status === 403) {
+      log(`RiseUp refused ${new URL(String(input instanceof Request ? input.url : input)).pathname} with HTTP ${res.status}`);
       await this.keeper.lost("RiseUp ended the session.");
       throw await this.#signInRequired();
     }
@@ -214,8 +217,9 @@ export class SessionManager {
     if (cookies.length === 0) throw new RiseupLoginError("RiseUp signed in but set no session cookie.");
     this.#pending = undefined;
     if (pending.watch) clearInterval(pending.watch);
+    const userAgent = pending.browser.userAgent();
     await pending.browser.close().catch(() => undefined);
-    await this.keeper.signedIn(cookies, pending.lengthMs);
+    await this.keeper.signedIn(cookies, pending.lengthMs, userAgent);
   }
 
   /** On the provider's pages: checks every few seconds whether RiseUp now counts the browser as signed in. */

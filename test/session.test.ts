@@ -120,7 +120,7 @@ describe("sign-in page", () => {
   });
 
   test("two-step sign-in: the provider's page is shown live, input reaches it, and it finishes by itself", async () => {
-    const { session, browsers, port } = await signedOutSession(true);
+    const { session, browsers, port, f } = await signedOutSession(true);
     const csrf = csrfOf((await http(port, "GET", "/")).text);
     await http(port, "POST", "/start", `csrf=${csrf}&phone=0500000000&length=1d`);
     await http(port, "POST", "/code", `csrf=${csrf}&code=123456`);
@@ -146,6 +146,9 @@ describe("sign-in page", () => {
     browser.finishSecondFactor();
     await until(() => session.keeper.status().state === "signed_in");
     expect(session.keeper.status().state).toBe("signed_in");
+    // Later calls go out as the browser that signed in.
+    await session.api.ping();
+    expect(f.calls.at(-1)!.headers["user-agent"]).toBe("ExampleBrowser/1.0");
     expect(browser.closed).toBe(true);
     expect((await http(port, "GET", "/screen.png")).status).toBe(404);
     expect((await http(port, "POST", "/click", `csrf=${csrf}&p.x=1&p.y=1`, undefined, { "x-screen-live": "1" })).status).toBe(410);

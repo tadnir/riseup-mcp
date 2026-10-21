@@ -88,6 +88,7 @@ Moving into fixed expenses is not supported: the app asks follow-up questions fo
 | `RISEUP_LOGIN_URL` | `http://localhost:<port>/` | The link handed out, when the page sits behind a reverse proxy. When set, the page starts with the server. |
 | `RISEUP_HEADLESS` | `true` | `false` runs the sign-in browser with a window. Google's sign-in refuses headless Chromium, so a two-step sign-in through Google needs `false`. On Linux without a screen the server starts an Xvfb one (install `xvfb`), as the image does |
 | `RISEUP_CHROMIUM_PATH` | Playwright's Chromium | Another Chromium to sign in with |
+| `RISEUP_LOG_FILE` | none | Also write the log here, for example `/proc/1/fd/2` when an MCP proxy that drops its servers' stderr is the container's main process |
 
 ## Hosting one long-lived copy
 
