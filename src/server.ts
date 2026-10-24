@@ -1,7 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { MONTH, type Budget, type MatchBy, type RiseupApi, type Transaction } from "./api.js";
+import { MONTH, type Budget, type MatchBy, type RiseupApi, type TrackingCategory, type Transaction } from "./api.js";
 import type { SessionManager } from "./session.js";
 
 export const VERSION = "0.1.0";
@@ -59,7 +59,7 @@ const TOOLS: { name: string; description: string; schema: z.ZodObject<z.ZodRawSh
   { name: "riseup_login", description: "Get the link where the user signs in to RiseUp (phone number, codes and two-step sign-in are done on that page, never in the chat). Returns the status when already signed in.", schema: schemas.empty },
   { name: "riseup_session_status", description: "Whether this server is signed in to RiseUp, since when, until when, and the sign-in link when it is not.", schema: schemas.empty },
   { name: "riseup_logout", description: "Sign out of RiseUp here: end the session and forget it.", schema: schemas.empty },
-  { name: "get_budget", description: "One cashflow month as RiseUp's app reads it: its envelopes (fixed, variable, tracking categories, income) with planned amounts and their transactions, and the transactions excluded from the cashflow.", schema: schemas.month },
+  { name: "get_budget", description: "One cashflow month as RiseUp's app plans it: its envelopes (fixed, variable, tracking categories, income) with planned and balanced amounts and their transactions, and the transactions excluded from the cashflow.", schema: schemas.month },
   { name: "list_transactions", description: "One cashflow month's transactions, each with the category it is in (variable, fixed, excluded, income, or a tracking category), its merchant, date and amount.", schema: schemas.transactions },
   { name: "list_categories", description: "The categories a transaction can be moved to with move_transaction: variable, excluded, and the user's tracking categories (with their ids), as of the given month.", schema: schemas.month },
   { name: "move_transaction", description: "Move a transaction to variable expenses, out of the cashflow (excluded), or into a tracking category; with applyTo=merchant, RiseUp applies it to the merchant's transactions too. Changes the user's RiseUp account. Returns where the transaction is afterwards.", schema: schemas.move },
@@ -94,7 +94,7 @@ export function locate(budget: Budget): Located[] {
         break;
       case "trackingCategory": {
         const tc = envelope.details?.trackingCategory;
-        place = { kind: "tracking", trackingCategoryId: String(tc?.id ?? tc?.categoryId ?? ""), name: String(tc?.name ?? envelope.details?.expense ?? "") };
+        place = { kind: "tracking", trackingCategoryId: trackingId(tc), name: String(tc?.name ?? envelope.details?.expense ?? "") };
         break;
       }
       default:
@@ -113,6 +113,41 @@ export function placeLabel(place: Place): string {
   return place.kind;
 }
 
+/** A tracking category's id: _id on an envelope's category, trackingCategoryId in the month's list. */
+function trackingId(tc: TrackingCategory | undefined): string {
+  return String(tc?._id ?? tc?.trackingCategoryId ?? "");
+}
+
+/**
+ * A month in the shape the tools read: each envelope with its planned and
+ * left amounts and its transactions as list_transactions gives them. RiseUp's
+ * own budget also carries every fixed envelope's full payment history, which
+ * runs to most of a megabyte.
+ */
+export function budgetSummary(budget: Budget): Record<string, unknown> {
+  const located = locate(budget);
+  const placed = new Map(located.map((l) => [l.transaction, l]));
+  const envelopes = (budget.envelopes ?? []).map((envelope) => {
+    const tc = envelope.details?.trackingCategory;
+    const name = envelope.type === "trackingCategory" ? tc?.name : envelope.details?.expense;
+    const businessName = envelope.type === "fixed" ? envelope.details?.businessName : undefined;
+    return {
+      type: envelope.type,
+      ...(name ? { name: String(name).trim() } : {}),
+      ...(businessName ? { businessName: String(businessName).trim() } : {}),
+      ...(envelope.type === "trackingCategory" && trackingId(tc) ? { trackingCategoryId: trackingId(tc) } : {}),
+      ...(envelope.originalAmount !== undefined ? { plannedAmount: envelope.originalAmount } : {}),
+      ...(envelope.balancedAmount !== undefined ? { balancedAmount: envelope.balancedAmount } : {}),
+      transactions: (envelope.actuals ?? []).map((t) => summary(placed.get(t)!)),
+    };
+  });
+  return {
+    month: budget.budgetDate,
+    envelopes,
+    excluded: located.filter((l) => l.place.kind === "excluded-expense" || l.place.kind === "excluded-income").map(summary),
+  };
+}
+
 export interface TrackingOption {
   trackingCategoryId: string;
   name: string;
@@ -124,14 +159,15 @@ export function trackingCategories(budget: Budget): TrackingOption[] {
   for (const envelope of budget.envelopes ?? []) {
     if (envelope.type !== "trackingCategory") continue;
     const tc = envelope.details?.trackingCategory;
-    const id = String(tc?.id ?? tc?.categoryId ?? "");
+    const id = trackingId(tc);
     if (id) found.set(id, String(tc?.name ?? ""));
   }
   for (const tc of budget.trackingCategoryMetadata ?? []) {
-    const id = String(tc.id ?? tc.categoryId ?? "");
-    if (id && !found.has(id)) found.set(id, String(tc.name ?? tc.categoryName ?? ""));
+    const id = trackingId(tc);
+    if (id && !found.has(id)) found.set(id, String(tc.name ?? ""));
   }
-  return [...found].map(([trackingCategoryId, name]) => ({ trackingCategoryId, name }));
+  // RiseUp's own hidden ones, such as __saving-hidden-category__, are not for moving into.
+  return [...found].filter(([, name]) => !/^__.*__$/.test(name)).map(([trackingCategoryId, name]) => ({ trackingCategoryId, name }));
 }
 
 /** The expense label RiseUp's app sends for a move to variable. */
@@ -233,7 +269,7 @@ export function createMcpServer(session: SessionManager): Server {
         return { state: "signed_out", message: "Signed out; the saved session is gone." };
       case "get_budget": {
         const args = schemas.month.parse(raw);
-        return api.budget(args.month);
+        return budgetSummary(await api.budget(args.month));
       }
       case "list_transactions": {
         const args = schemas.transactions.parse(raw);

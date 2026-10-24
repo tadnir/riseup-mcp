@@ -167,8 +167,10 @@ export interface Envelope {
 }
 
 export interface TrackingCategory {
-  id?: string;
-  categoryId?: string;
+  /** On an envelope's category. */
+  _id?: string;
+  /** In the month's trackingCategoryMetadata. */
+  trackingCategoryId?: string;
   name?: string;
   [key: string]: unknown;
 }
