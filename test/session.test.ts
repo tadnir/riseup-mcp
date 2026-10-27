@@ -3,7 +3,7 @@ import { request } from "node:http";
 import type { Budget } from "../src/api.js";
 import { normalizePhone } from "../src/login.js";
 import { SessionManager } from "../src/session.js";
-import { createMcpServer, filterTransactions, locate, trackingCategories } from "../src/server.js";
+import { budgetSummary, createMcpServer, filterTransactions, locate, trackingCategories } from "../src/server.js";
 import { fakeBrowser, fakeFetch, json, memoryStore, type FakeBrowser } from "./helpers.js";
 
 /** A made-up month in the shape of RiseUp's budget answer. */
@@ -13,11 +13,11 @@ function budget(): Budget {
     envelopes: [
       { id: "e1", type: "variable", details: { expense: "משתנות" }, actuals: [{ transactionId: "t1", businessName: "Example Cafe", transactionDate: "2026-05-03", billingAmount: 42, isIncome: false, expense: "אוכל בחוץ" }] },
       { id: "e2", type: "fixed", details: { expense: "שכירות", isIncome: false }, actuals: [{ transactionId: "t2", businessName: "Example Landlord", transactionDate: "2026-05-01", billingAmount: 5000, isIncome: false }] },
-      { id: "e3", type: "trackingCategory", details: { trackingCategory: { id: "tc1", name: "Eating out" } }, actuals: [{ transactionId: "t3", businessName: "Example Diner", transactionDate: "2026-05-10", billingAmount: 80, isIncome: false }] },
+      { id: "e3", type: "trackingCategory", details: { trackingCategory: { _id: "tc1", name: "Eating out" } }, actuals: [{ transactionId: "t3", businessName: "Example Diner", transactionDate: "2026-05-10", billingAmount: 80, isIncome: false }] },
       { id: "e4", type: "variableIncome", actuals: [{ transactionId: "t4", businessName: "Example Client", transactionDate: "2026-05-15", incomeAmount: 900, isIncome: true }] },
     ],
     excluded: [{ transactionId: "t5", businessName: "Example Store", transactionDate: "2026-05-20", billingAmount: 300, isIncome: false }],
-    trackingCategoryMetadata: [{ id: "tc2", name: "Groceries" }],
+    trackingCategoryMetadata: [{ trackingCategoryId: "tc2", name: "Groceries" }, { trackingCategoryId: "tc3", name: "__hidden__" }],
   };
 }
 
@@ -277,6 +277,18 @@ describe("helpers", () => {
       { trackingCategoryId: "tc1", name: "Eating out" },
       { trackingCategoryId: "tc2", name: "Groceries" },
     ]);
+  });
+
+  test("a budget is summed up without RiseUp's payment histories", () => {
+    const data = budget();
+    data.envelopes![1]!.details!.sequence = [{ transactionId: "old" }];
+    data.envelopes![1]!.originalAmount = 5000;
+    const s = budgetSummary(data) as { month: string; envelopes: Record<string, unknown>[]; excluded: { transactionId: string }[] };
+    expect(s.month).toBe("2026-05");
+    expect(s.envelopes[1]).toEqual({ type: "fixed", name: "שכירות", plannedAmount: 5000, transactions: [expect.objectContaining({ category: "fixed", transactionId: "t2" })] });
+    expect(s.envelopes[2]).toMatchObject({ type: "trackingCategory", name: "Eating out", trackingCategoryId: "tc1" });
+    expect(s.excluded.map((t) => t.transactionId)).toEqual(["t5"]);
+    expect(JSON.stringify(s)).not.toContain("old");
   });
 
   test("filters", () => {
