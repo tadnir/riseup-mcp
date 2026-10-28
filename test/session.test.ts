@@ -17,7 +17,7 @@ function budget(): Budget {
       { id: "e4", type: "variableIncome", actuals: [{ transactionId: "t4", businessName: "Example Client", transactionDate: "2026-05-15", incomeAmount: 900, isIncome: true }] },
     ],
     excluded: [{ transactionId: "t5", businessName: "Example Store", transactionDate: "2026-05-20", billingAmount: 300, isIncome: false }],
-    trackingCategoryMetadata: [{ trackingCategoryId: "tc2", name: "Groceries" }, { trackingCategoryId: "tc3", name: "__hidden__" }],
+    trackingCategoryMetadata: [{ trackingCategoryId: "tc2", name: "Groceries" }, { trackingCategoryId: "tc3", name: "__hidden__" }, { trackingCategoryId: "tc4", name: "Taxis", display: "hide" }],
   };
 }
 
@@ -202,7 +202,7 @@ describe("tools", () => {
     expect((await result(server, "list_transactions", { month: "2026-05", search: "cafe" })).count).toBe(1);
     expect((await result(server, "list_transactions", { month: "2026-05", category: "excluded" })).transactions[0].transactionId).toBe("t5");
     const categories = await result(server, "list_categories", { month: "2026-05" });
-    expect(categories.categories.map((c: { to: string }) => c.to)).toEqual(["variable", "excluded", "tc1", "tc2"]);
+    expect(categories.categories.map((c: { to: string }) => c.to)).toEqual(["variable", "excluded", "tc1", "tc2", "tc4"]);
   });
 
   test("moves make the web app's call for each case and report where the transaction is", async () => {
@@ -276,6 +276,7 @@ describe("helpers", () => {
     expect(trackingCategories(budget())).toEqual([
       { trackingCategoryId: "tc1", name: "Eating out" },
       { trackingCategoryId: "tc2", name: "Groceries" },
+      { trackingCategoryId: "tc4", name: "Taxis", hidden: true },
     ]);
   });
 

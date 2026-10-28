@@ -9,7 +9,7 @@ export const VERSION = "0.1.0";
 const INSTRUCTIONS = [
   "Unofficial client for the user's own RiseUp (רייזאפ) cashflow, through the same API as RiseUp's web app. Unaffiliated with RiseUp.",
   "Reading: get_budget gives a month's categories with their transactions; list_transactions flattens one month into transactions, each with the category it is in; list_categories names the categories a transaction can move to.",
-  "Changing: move_transaction moves one transaction (or every transaction from its merchant) to variable expenses, out of the cashflow (excluded), or into a tracking category, making the same calls RiseUp's app makes for that move; set_transaction_comment sets a transaction's note. Ask the user before moving, and say whether it applies to one transaction or the whole merchant.",
+  "Changing: move_transaction moves one transaction (or every transaction from its merchant) to variable expenses, out of the cashflow (excluded), or into a tracking category, making the same calls RiseUp's app makes for that move; set_transaction_comment sets a transaction's note. Ask the user before moving, and say whether it applies to one transaction or the whole merchant. RiseUp rebuilds a month's budget later (overnight, as seen so far), so a move can show in reads only after that; avoid tracking categories marked hidden unless the user asks, since what moves there drops out of the cashflow.",
   "Months are cashflow months, YYYY-MM. Amounts are in Israeli shekels (ILS).",
   "When a tool says the user must sign in, call riseup_login and give the user the link it returns; the user signs in on that page. Never ask for their phone number, codes or password in the chat.",
   "Keep Hebrew names as RiseUp gives them.",
@@ -151,6 +151,8 @@ export function budgetSummary(budget: Budget): Record<string, unknown> {
 export interface TrackingOption {
   trackingCategoryId: string;
   name: string;
+  /** Hidden in the user's RiseUp: it has no envelope, so what moves in drops out of the cashflow. */
+  hidden?: true;
 }
 
 /** The month's tracking categories, from its envelopes and RiseUp's list of them. */
@@ -167,7 +169,10 @@ export function trackingCategories(budget: Budget): TrackingOption[] {
     if (id && !found.has(id)) found.set(id, String(tc.name ?? ""));
   }
   // RiseUp's own hidden ones, such as __saving-hidden-category__, are not for moving into.
-  return [...found].filter(([, name]) => !/^__.*__$/.test(name)).map(([trackingCategoryId, name]) => ({ trackingCategoryId, name }));
+  const hidden = new Set((budget.trackingCategoryMetadata ?? []).filter((tc) => tc.display === "hide").map(trackingId));
+  return [...found]
+    .filter(([, name]) => !/^__.*__$/.test(name))
+    .map(([trackingCategoryId, name]) => ({ trackingCategoryId, name, ...(hidden.has(trackingCategoryId) ? { hidden: true as const } : {}) }));
 }
 
 /** The expense label RiseUp's app sends for a move to variable. */
@@ -283,7 +288,14 @@ export function createMcpServer(session: SessionManager): Server {
           categories: [
             { to: "variable", description: "Variable (day-to-day) expenses, or variable income for an income." },
             { to: "excluded", description: "Out of the cashflow: a one-off RiseUp should not count." },
-            ...trackingCategories(await api.budget(args.month)).map((t) => ({ to: t.trackingCategoryId, name: t.name, description: "A tracking category, for expenses." })),
+            ...trackingCategories(await api.budget(args.month)).map((t) => ({
+              to: t.trackingCategoryId,
+              name: t.name,
+              description: t.hidden
+                ? "A tracking category the user hid in RiseUp: a transaction moved here drops out of the cashflow until they show it again."
+                : "A tracking category, for expenses.",
+              ...(t.hidden ? { hidden: true } : {}),
+            })),
           ],
         };
       }
