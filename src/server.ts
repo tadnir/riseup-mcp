@@ -9,7 +9,7 @@ export const VERSION = "0.1.0";
 const INSTRUCTIONS = [
   "Unofficial client for the user's own RiseUp (רייזאפ) cashflow, through the same API as RiseUp's web app. Unaffiliated with RiseUp.",
   "Reading: get_budget gives a month's categories with their transactions; list_transactions flattens one month into transactions, each with the category it is in; list_categories names the categories a transaction can move to.",
-  "Changing: move_transaction moves one transaction (or every transaction from its merchant) to variable expenses, out of the cashflow (excluded), or into a tracking category, making the same calls RiseUp's app makes for that move; set_transaction_comment sets a transaction's note. Ask the user before moving, and say whether it applies to one transaction or the whole merchant. RiseUp rebuilds a month's budget later (overnight, as seen so far), so a move can show in reads only after that; avoid tracking categories marked hidden unless the user asks, since what moves there drops out of the cashflow.",
+  "Changing: move_transaction moves one transaction (or every transaction from its merchant) to variable expenses, out of the cashflow (excluded), or into a tracking category, making the same calls RiseUp's app makes for that move; set_transaction_comment sets a transaction's note. Ask the user before moving, and say whether it applies to one transaction or the whole merchant. RiseUp rebuilds a month's budget later (overnight, as seen so far), so a move can show in reads only after that; avoid tracking categories marked hidden unless the user asks, since what moves there drops out of the cashflow. Reads leave out transactions in hidden tracking categories; to move one out, call move_transaction with its id and hidden=true.",
   "Months are cashflow months, YYYY-MM. Amounts are in Israeli shekels (ILS).",
   "When a tool says the user must sign in, call riseup_login and give the user the link it returns; the user signs in on that page. Never ask for their phone number, codes or password in the chat.",
   "Keep Hebrew names as RiseUp gives them.",
@@ -31,6 +31,7 @@ const schemas = {
     transactionId,
     to: z.string().min(1).max(100).describe('Where to: "variable", "excluded", or a tracking category\'s id or name from list_categories.'),
     applyTo: z.enum(["transaction", "merchant"]).default("transaction").describe("transaction: this one only. merchant: this and future transactions from the same merchant, as RiseUp's app offers."),
+    hidden: z.enum(["true"]).optional().describe("Set to true for a transaction in a tracking category the user hid: RiseUp leaves those out of the month's budget, so the move is sent by its id without finding it first. This one transaction only."),
   }),
   comment: z.object({
     transactionId,
@@ -225,6 +226,11 @@ export async function move(api: RiseupApi, located: Located, to: { kind: "variab
   return "save-enrichment";
 }
 
+/** A transaction RiseUp leaves out of the budget because its tracking category is hidden: known only by its id. */
+export function inHidden(transactionId: string): Located {
+  return { transaction: { transactionId, isIncome: false }, place: { kind: "tracking" } };
+}
+
 function summary(l: Located): Record<string, unknown> {
   const t = l.transaction;
   const pick = (...keys: string[]) => Object.fromEntries(keys.filter((k) => t[k] !== undefined && t[k] !== null).map((k) => [k, t[k]]));
@@ -255,7 +261,7 @@ export function createMcpServer(session: SessionManager): Server {
   async function find(monthValue: string, id: string): Promise<{ budget: Budget; located: Located }> {
     const budget = await api.budget(monthValue);
     const located = locate(budget).find((l) => String(l.transaction.transactionId) === id);
-    if (!located) throw new Error(`No transaction ${id} in ${monthValue}. Use list_transactions for that month.`);
+    if (!located) throw new Error(`No transaction ${id} in ${monthValue}. Use list_transactions for that month, or hidden=true if it is in a hidden tracking category.`);
     return { budget, located };
   }
 
@@ -301,7 +307,8 @@ export function createMcpServer(session: SessionManager): Server {
       }
       case "move_transaction": {
         const args = schemas.move.parse(raw);
-        const { budget, located } = await find(args.month, args.transactionId);
+        if (args.hidden && args.applyTo === "merchant") throw new Error("A move with hidden=true applies to this one transaction only.");
+        const { budget, located } = args.hidden ? { budget: await api.budget(args.month), located: inHidden(args.transactionId) } : await find(args.month, args.transactionId);
         let to: Parameters<typeof move>[2];
         if (args.to === "variable" || args.to === "excluded") to = { kind: args.to };
         else {
@@ -310,7 +317,7 @@ export function createMcpServer(session: SessionManager): Server {
           if (!match) throw new Error(`No tracking category ${JSON.stringify(args.to)} in ${args.month}. Use list_categories.`);
           to = { kind: "tracking", trackingCategoryId: match.trackingCategoryId };
         }
-        const before = placeLabel(located.place);
+        const before = args.hidden ? "a hidden tracking category" : placeLabel(located.place);
         const via = await move(api, located, to, args.applyTo === "merchant" ? "businessName" : "transactionId");
         const after = locate(await api.budget(args.month)).find((l) => String(l.transaction.transactionId) === args.transactionId);
         return {
