@@ -33,6 +33,9 @@ function world() {
       // Moves land where RiseUp would put them, so the tool can report the result.
       const body = JSON.parse(call.body ?? "{}") as Record<string, string>;
       const all = locate(data);
+      // A transaction in a hidden category is not in the budget, so nothing visible moves.
+      const hiddenId = body.value === "t9" || body.transactionId === "t9";
+      if (hiddenId) return json({});
       const take = (key: string) => {
         const id = all.find((l) => l.transaction.transactionId === key || l.transaction.businessName === key)!.transaction.transactionId;
         for (const e of data.envelopes ?? []) e.actuals = (e.actuals ?? []).filter((t) => t.transactionId !== id);
@@ -237,6 +240,27 @@ describe("tools", () => {
 
     await result(server, "set_transaction_comment", { transactionId: "t1", comment: "a note" });
     expect(lastPost()).toEqual(["/api/enrichment-update/save-comments", { transactionId: "t1", comment: "a note" }]);
+  });
+
+  test("a transaction in a hidden category moves by its id when asked to", async () => {
+    const { server, f } = await signedIn();
+    const lastPost = () => {
+      const c = f.calls.filter((x) => x.method === "POST").at(-1)!;
+      return [new URL(c.url).pathname, JSON.parse(c.body!)];
+    };
+    const r = await result(server, "move_transaction", { month: "2026-05", transactionId: "t9", to: "variable", hidden: "true" });
+    expect(lastPost()).toEqual(["/api/tracking-categories-blacklist-predicates", { matchBy: "transactionId", value: "t9" }]);
+    expect(r).toMatchObject({ moved: true, from: "a hidden tracking category", now: "not in this month any more" });
+
+    await result(server, "move_transaction", { month: "2026-05", transactionId: "t9", to: "Groceries", hidden: "true" });
+    expect(lastPost()).toEqual(["/api/tracking-categories-predicates", { trackingCategoryId: "tc2", matchBy: "transactionId", value: "t9" }]);
+
+    await result(server, "move_transaction", { month: "2026-05", transactionId: "t9", to: "excluded", hidden: "true" });
+    expect(lastPost()).toEqual(["/api/investigator/answers/budget-category", { transactionId: "t9", budgetCategory: "excluded" }]);
+
+    const posts = f.calls.filter((x) => x.method === "POST").length;
+    expect((await callTool(server, "move_transaction", { month: "2026-05", transactionId: "t9", to: "variable", hidden: "true", applyTo: "merchant" })).isError).toBe(true);
+    expect(f.calls.filter((x) => x.method === "POST").length).toBe(posts);
   });
 
   test("a refused cookie ends the session and the tools ask for a sign-in", async () => {
