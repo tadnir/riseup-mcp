@@ -308,8 +308,10 @@ describe("helpers", () => {
     const data = budget();
     data.envelopes![1]!.details!.sequence = [{ transactionId: "old" }];
     data.envelopes![1]!.originalAmount = 5000;
-    const s = budgetSummary(data) as { month: string; envelopes: Record<string, unknown>[]; excluded: { transactionId: string }[] };
+    data.lastUpdatedAt = "2026-05-21T02:05:00.000Z";
+    const s = budgetSummary(data) as { month: string; updatedAt: string; envelopes: Record<string, unknown>[]; excluded: { transactionId: string }[] };
     expect(s.month).toBe("2026-05");
+    expect(s.updatedAt).toBe("2026-05-21T02:05:00.000Z");
     expect(s.envelopes[1]).toEqual({ type: "fixed", name: "שכירות", plannedAmount: 5000, transactions: [expect.objectContaining({ category: "fixed", transactionId: "t2" })] });
     expect(s.envelopes[2]).toMatchObject({ type: "trackingCategory", name: "Eating out", trackingCategoryId: "tc1" });
     expect(s.excluded.map((t) => t.transactionId)).toEqual(["t5"]);

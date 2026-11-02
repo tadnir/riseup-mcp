@@ -60,7 +60,7 @@ const TOOLS: { name: string; description: string; schema: z.ZodObject<z.ZodRawSh
   { name: "riseup_login", description: "Get the link where the user signs in to RiseUp (phone number, codes and two-step sign-in are done on that page, never in the chat). Returns the status when already signed in.", schema: schemas.empty },
   { name: "riseup_session_status", description: "Whether this server is signed in to RiseUp, since when, until when, and the sign-in link when it is not.", schema: schemas.empty },
   { name: "riseup_logout", description: "Sign out of RiseUp here: end the session and forget it.", schema: schemas.empty },
-  { name: "get_budget", description: "One cashflow month as RiseUp's app plans it: its envelopes (fixed, variable, tracking categories, income) with planned and balanced amounts and their transactions, and the transactions excluded from the cashflow.", schema: schemas.month },
+  { name: "get_budget", description: "One cashflow month as RiseUp's app plans it: when RiseUp last rebuilt it, its envelopes (fixed, variable, tracking categories, income) with planned and balanced amounts and their transactions, and the transactions excluded from the cashflow.", schema: schemas.month },
   { name: "list_transactions", description: "One cashflow month's transactions, each with the category it is in (variable, fixed, excluded, income, or a tracking category), its merchant, date and amount.", schema: schemas.transactions },
   { name: "list_categories", description: "The categories a transaction can be moved to with move_transaction: variable, excluded, and the user's tracking categories (with their ids), as of the given month.", schema: schemas.month },
   { name: "move_transaction", description: "Move a transaction to variable expenses, out of the cashflow (excluded), or into a tracking category; with applyTo=merchant, RiseUp applies it to the merchant's transactions too. Changes the user's RiseUp account. Returns where the transaction is afterwards.", schema: schemas.move },
@@ -144,6 +144,8 @@ export function budgetSummary(budget: Budget): Record<string, unknown> {
   });
   return {
     month: budget.budgetDate,
+    // When RiseUp last rebuilt the month: moves show in reads only after a rebuild.
+    ...(budget.lastUpdatedAt ? { updatedAt: budget.lastUpdatedAt } : {}),
     envelopes,
     excluded: located.filter((l) => l.place.kind === "excluded-expense" || l.place.kind === "excluded-income").map(summary),
   };
